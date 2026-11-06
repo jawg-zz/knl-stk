@@ -165,7 +165,7 @@ async function handlePay(req, res) {
     return send(res, 501, {
       configured: false,
       demo: true,
-      message: 'STK not configured — use Paybill 615395',
+      message: 'STK service is linking — please try again shortly',
       CheckoutRequestID: 'DEMO-' + Date.now()
     });
   }
