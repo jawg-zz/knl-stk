@@ -8,7 +8,8 @@ const fs = require('fs');
 const path = require('path');
 
 function env(name, fallback) {
-  const v = process.env[name];
+  let v = process.env[name];
+  if (typeof v === 'string') v = v.trim();
   return (v === undefined || v === '') ? fallback : v;
 }
 
