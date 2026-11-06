@@ -203,11 +203,57 @@ async function handleCallback(req, res) {
     String(record.receipt), String(record.amount), String(record.phone)
   );
   try {
-    const dir = path.join(__dirname, '..', 'data');
+    const dir = path.join(__dirname, 'data');
     fs.mkdirSync(dir, { recursive: true });
     fs.appendFileSync(path.join(dir, 'payments.log'), JSON.stringify(record) + '\n');
   } catch { /* log failure must not break callback */ }
   send(res, 200, { ResultCode: 0, ResultDesc: 'Accepted' });
+}
+
+function stkQuery(checkoutRequestId, token) {
+  return new Promise((resolve, reject) => {
+    const shortcode = process.env.MPESA_SHORTCODE;
+    const passkey = process.env.MPESA_PASSKEY;
+    const ts = nairobiTimestamp();
+    const password = Buffer.from(shortcode + passkey + ts).toString('base64');
+    const payload = JSON.stringify({
+      BusinessShortCode: Number(shortcode),
+      Password: password,
+      Timestamp: ts,
+      CheckoutRequestID: checkoutRequestId
+    });
+    const url = baseUrl() + '/mpesa/stkpushquery/v1/query';
+    const req = https.request(url, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => resolve({ status: res.statusCode, body: data }));
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+async function handleQuery(req, res) {
+  const body = await readJson(req);
+  const id = body && String(body.checkoutRequestId || '').trim();
+  if (!id) return send(res, 400, { error: 'checkoutRequestId required' });
+  if (!isConfigured()) return send(res, 501, { configured: false, demo: true });
+  try {
+    const token = await getToken();
+    const result = await stkQuery(id, token);
+    res.writeHead(result.status || 200, { 'Content-Type': 'application/json' });
+    res.end(result.body);
+  } catch (e) {
+    send(res, 502, { error: 'Query failed' });
+  }
 }
 
 function handleStatus(req, res) {
@@ -224,6 +270,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'POST' && url === '/api/pay') return handlePay(req, res);
   if (req.method === 'POST' && url === '/api/pay/callback') return handleCallback(req, res);
   if (req.method === 'GET' && url === '/api/pay/status') return handleStatus(req, res);
+  if (req.method === 'POST' && url === '/api/pay/query') return handleQuery(req, res);
   send(res, 404, { error: 'Not found' });
 });
 
